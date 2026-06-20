@@ -1,0 +1,6 @@
+{
+  "extends": "../node_modules/@bike-outliner/extension-kit/api/style/tsconfig.json",
+  "include": [
+    "../src/*/style/**/*"
+  ]
+}

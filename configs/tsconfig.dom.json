@@ -1,0 +1,7 @@
+{
+  "extends": "../node_modules/@bike-outliner/extension-kit/api/dom/tsconfig.json",
+  "include": [
+    "../node_modules/@bike-outliner/extension-kit/api/dom/globals.d.ts",
+    "../src/*/dom/**/*"
+  ]
+}

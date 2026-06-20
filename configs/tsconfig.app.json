@@ -1,0 +1,9 @@
+{
+  "extends": "../node_modules/@bike-outliner/extension-kit/api/app/tsconfig.json",
+  "include": [
+    "../src/*/dom/protocols.ts",
+    "../src/*/app/**/*",
+    "../src/*/tests/**/*",
+    "../node_modules/@bike-outliner/extension-kit/api/app/test.d.ts"
+  ]
+}

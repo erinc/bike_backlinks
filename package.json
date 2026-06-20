@@ -1,0 +1,13 @@
+{
+  "name": "bike-backlinks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "bike-ext build",
+    "test": "bike-ext test"
+  },
+  "devDependencies": {
+    "@bike-outliner/extension-kit": "https://github.com/bike-outliner/extension-kit/archive/refs/heads/main.tar.gz"
+  }
+}
