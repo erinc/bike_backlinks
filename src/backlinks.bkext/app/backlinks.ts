@@ -218,6 +218,7 @@ function urlKey(url: URL): string {
 function backlinkItem(row: Row): BacklinkItem {
   return {
     rowId: row.id,
+    persistentId: row.persistentId,
     text: displayText(row),
     type: row.type,
     level: row.level,

@@ -15,7 +15,7 @@ function BacklinksPanel({ context }: { context: DOMExtensionContext<BacklinksPro
     backlinks: [],
     message: 'Select a row to see backlinks.',
   })
-  const [rowDates, setRowDates] = useState<Record<number, RowDates>>({})
+  const [rowDates, setRowDates] = useState<Record<string, RowDates>>({})
 
   useEffect(() => {
     context.onmessage = (message) => {
@@ -42,7 +42,7 @@ function BacklinksPanel({ context }: { context: DOMExtensionContext<BacklinksPro
     : undefined
 
   useEffect(() => {
-    const rowRefs = state.backlinks.map((backlink) => backlink.rowId)
+    const rowRefs = state.backlinks.map((backlink) => backlink.persistentId ?? backlink.rowId)
     if (rowRefs.length === 0) {
       setRowDates({})
       return
@@ -53,11 +53,15 @@ function BacklinksPanel({ context }: { context: DOMExtensionContext<BacklinksPro
       .then((outline) => {
         if (canceled) return
 
-        const nextDates: Record<number, RowDates> = {}
+        const nextDates: Record<string, RowDates> = {}
         for (const row of flattenSessionRows(outline.root.children ?? [])) {
-          nextDates[row.id] = {
+          const dates = {
             created: row.created,
             modified: row.modified,
+          }
+          nextDates[rowDateKey(row.id)] = dates
+          if (row.persistentId) {
+            nextDates[persistentDateKey(row.persistentId)] = dates
           }
         }
         setRowDates(nextDates)
@@ -142,16 +146,33 @@ type RowDates = {
   modified: string
 }
 
-function sortBacklinks(backlinks: BacklinkItem[], rowDates: Record<number, RowDates>): BacklinkItem[] {
+function sortBacklinks(backlinks: BacklinkItem[], rowDates: Record<string, RowDates>): BacklinkItem[] {
   const outlineOrder = new Map(backlinks.map((backlink, index) => [backlink.rowId, index]))
 
   return [...backlinks].sort((left, right) => {
-    const leftTime = sortTime(rowDates[left.rowId])
-    const rightTime = sortTime(rowDates[right.rowId])
+    const leftTime = sortTime(datesForBacklink(left, rowDates))
+    const rightTime = sortTime(datesForBacklink(right, rowDates))
 
     if (leftTime !== rightTime) return rightTime - leftTime
     return (outlineOrder.get(left.rowId) ?? 0) - (outlineOrder.get(right.rowId) ?? 0)
   })
+}
+
+function datesForBacklink(backlink: BacklinkItem, rowDates: Record<string, RowDates>): RowDates | undefined {
+  if (backlink.persistentId) {
+    const byPersistentId = rowDates[persistentDateKey(backlink.persistentId)]
+    if (byPersistentId) return byPersistentId
+  }
+
+  return rowDates[rowDateKey(backlink.rowId)]
+}
+
+function rowDateKey(rowId: number): string {
+  return `row:${rowId}`
+}
+
+function persistentDateKey(persistentId: string): string {
+  return `pid:${persistentId}`
 }
 
 function sortTime(dates: RowDates | undefined): number {
