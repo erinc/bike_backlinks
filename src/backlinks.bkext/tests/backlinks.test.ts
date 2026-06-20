@@ -1,5 +1,5 @@
 import { Outline } from 'bike/app'
-import { findBacklinks, rowLinksToTarget } from '../app/backlinks'
+import { BacklinkIndex, findBacklinks, rowLinksToTarget } from '../app/backlinks'
 
 describe('Backlinks', () => {
   it('finds rows that link to the target row by shorthand', () => {
@@ -50,5 +50,47 @@ describe('Backlinks', () => {
     ])
 
     assert.equal(rowLinksToTarget(source, target), false)
+  })
+
+  it('updates one changed source row without rebuilding the full index', () => {
+    const outline = new Outline()
+    outline.root.ensuredPersistentId
+    const [target, source] = outline.insertRows([
+      { persistentId: 'target', text: 'Target' },
+      { text: 'No link yet' },
+    ])
+    const index = new BacklinkIndex(outline)
+
+    assert.equal(index.getBacklinks(target).length, 0)
+
+    source.text.replace([0, source.text.count], 'See Target')
+    source.text.addAttribute('a', '#target', [4, 10])
+    index.applyChange({
+      type: 'rowChanged',
+      rowId: source.id,
+      change: {
+        type: 'replacedText',
+        at: 0,
+        replacedText: source.text,
+        insertedText: source.text,
+      },
+    })
+
+    assert.equal(index.getBacklinks(target).length, 1)
+  })
+
+  it('removes deleted source rows from the index', () => {
+    const outline = new Outline()
+    outline.root.ensuredPersistentId
+    const [target, source] = outline.insertRows([
+      { persistentId: 'target', text: 'Target' },
+      { text: 'See [Target](#target)', format: 'markdown' },
+    ])
+    const index = new BacklinkIndex(outline)
+
+    assert.equal(index.getBacklinks(target).length, 1)
+    index.applyChange({ type: 'siblingsRemoved', siblings: [source] })
+
+    assert.equal(index.getBacklinks(target).length, 0)
   })
 })

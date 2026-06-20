@@ -1,37 +1,148 @@
-import { AttributedString, Outline, Range, Row, URL } from 'bike/app'
+import { AttributedString, Outline, OutlineChange, Range, Row, URL } from 'bike/app'
 import { BacklinkItem } from '../dom/protocols'
 
 export function findBacklinks(outline: Outline, target: Row): BacklinkItem[] {
-  if (!target.persistentId) return []
+  return new BacklinkIndex(outline).getBacklinks(target)
+}
 
-  const seen = new Set<number>()
-  const backlinks: BacklinkItem[] = []
+export class BacklinkIndex {
+  private targetSources = new Map<string, Map<number, BacklinkItem>>()
+  private sourceTargets = new Map<number, Set<string>>()
 
-  for (const row of outline.root.descendants) {
-    if (row.id === target.id) continue
-    if (!rowLinksToTarget(row, target)) continue
-    if (seen.has(row.id)) continue
-
-    seen.add(row.id)
-    backlinks.push({
-      rowId: row.id,
-      text: displayText(row),
-      type: row.type,
-      level: row.level,
-      path: row.ancestors
-        .filter((ancestor) => ancestor.parent)
-        .map(displayText),
-    })
+  constructor(private outline: Outline) {
+    this.rebuild(outline)
   }
 
-  return backlinks
+  rebuild(outline = this.outline): void {
+    this.outline = outline
+    this.targetSources.clear()
+    this.sourceTargets.clear()
+    this.indexRows(outline.root.descendants)
+  }
+
+  applyChange(change: OutlineChange): boolean {
+    switch (change.type) {
+      case 'rowChanged': {
+        const row = this.outline.getRowById(change.rowId)
+        if (!row) return false
+        this.reindexRow(row)
+        return true
+      }
+      case 'siblingsInserted':
+        this.indexRowsWithDescendants(change.siblings)
+        return true
+      case 'siblingsRemoved':
+        this.removeRowsWithDescendants(change.siblings)
+        return true
+      case 'siblingsMoved':
+        this.reindexRowsWithDescendants(change.newSiblings)
+        return true
+      case 'reload':
+        this.rebuild(change.newOutline)
+        return true
+      case 'beginTransaction':
+      case 'endTransaction':
+      case 'metadata':
+        return false
+    }
+  }
+
+  getBacklinks(target: Row): BacklinkItem[] {
+    if (!target.persistentId) return []
+
+    const seen = new Set<number>()
+    const backlinks: BacklinkItem[] = []
+
+    for (const key of targetKeys(target)) {
+      const sources = this.targetSources.get(key)
+      if (!sources) continue
+
+      for (const item of sources.values()) {
+        if (item.rowId === target.id || seen.has(item.rowId)) continue
+        seen.add(item.rowId)
+        backlinks.push(item)
+      }
+    }
+
+    return backlinks
+  }
+
+  private indexRows(rows: Iterable<Row>): void {
+    for (const row of rows) {
+      this.indexRow(row)
+    }
+  }
+
+  private indexRowsWithDescendants(rows: Iterable<Row>): void {
+    for (const row of rows) {
+      this.indexRow(row)
+      this.indexRows(row.descendants)
+    }
+  }
+
+  private reindexRow(row: Row): void {
+    this.removeRow(row)
+    this.indexRow(row)
+  }
+
+  private reindexRowsWithDescendants(rows: Iterable<Row>): void {
+    for (const row of rows) {
+      this.reindexRow(row)
+      for (const descendant of row.descendants) {
+        this.reindexRow(descendant)
+      }
+    }
+  }
+
+  private removeRowsWithDescendants(rows: Iterable<Row>): void {
+    for (const row of rows) {
+      this.removeRow(row)
+      for (const descendant of row.descendants) {
+        this.removeRow(descendant)
+      }
+    }
+  }
+
+  private indexRow(row: Row): void {
+    const keys = linkTargetKeys(row)
+    if (keys.size === 0) return
+
+    const item = backlinkItem(row)
+    this.sourceTargets.set(row.id, keys)
+
+    for (const key of keys) {
+      let sources = this.targetSources.get(key)
+      if (!sources) {
+        sources = new Map<number, BacklinkItem>()
+        this.targetSources.set(key, sources)
+      }
+      sources.set(row.id, item)
+    }
+  }
+
+  private removeRow(row: Row): void {
+    const oldKeys = this.sourceTargets.get(row.id)
+    if (!oldKeys) return
+
+    for (const key of oldKeys) {
+      const sources = this.targetSources.get(key)
+      if (!sources) continue
+      sources.delete(row.id)
+      if (sources.size === 0) {
+        this.targetSources.delete(key)
+      }
+    }
+
+    this.sourceTargets.delete(row.id)
+  }
 }
 
 export function rowLinksToTarget(row: Row, target: Row): boolean {
   if (!target.persistentId) return false
 
-  for (const link of linksInText(row.text)) {
-    if (linkMatchesTarget(link, row.outline, target)) return true
+  const rowKeys = linkTargetKeys(row)
+  for (const key of targetKeys(target)) {
+    if (rowKeys.has(key)) return true
   }
 
   return false
@@ -51,32 +162,69 @@ function linksInText(text: AttributedString): string[] {
   return links
 }
 
-function linkMatchesTarget(link: string, outline: Outline, target: Row): boolean {
-  if (isLocalShorthandForTarget(link, target.persistentId!)) return true
+function linkTargetKeys(row: Row): Set<string> {
+  const keys = new Set<string>()
 
-  const resolved = outline.resolveLink(link)
-  if (!resolved) return false
+  for (const link of linksInText(row.text)) {
+    for (const key of targetKeysForLink(link, row.outline)) {
+      keys.add(key)
+    }
+  }
 
-  return sameBikeRowURL(resolved, target.url)
+  return keys
 }
 
-function isLocalShorthandForTarget(link: string, targetPersistentId: string): boolean {
-  if (!link.startsWith('#')) return false
+function targetKeysForLink(link: string, outline: Outline): string[] {
+  const keys: string[] = []
+
+  if (link.startsWith('#')) {
+    const persistentId = persistentIdFromShorthand(link)
+    if (persistentId) keys.push(persistentKey(persistentId))
+  }
+
+  const resolved = outline.resolveLink(link)
+  if (resolved?.scheme === 'bike') {
+    keys.push(urlKey(resolved))
+  }
+
+  return keys
+}
+
+function persistentIdFromShorthand(link: string): string | undefined {
   const shorthand = link.slice(1)
-  if (shorthand === targetPersistentId) return true
   try {
-    return decodeURIComponent(shorthand) === targetPersistentId
+    return decodeURIComponent(shorthand)
   } catch {
-    return false
+    return undefined
   }
 }
 
-function sameBikeRowURL(left: URL, right: URL): boolean {
-  if (left.scheme !== 'bike' || right.scheme !== 'bike') return false
+function targetKeys(row: Row): string[] {
+  if (!row.persistentId) return []
+  return [
+    persistentKey(row.persistentId),
+    urlKey(row.url),
+  ]
+}
 
-  return (left.host ?? '') === (right.host ?? '')
-    && (left.path ?? '') === (right.path ?? '')
-    && (left.fragment ?? '') === (right.fragment ?? '')
+function persistentKey(persistentId: string): string {
+  return `pid:${persistentId}`
+}
+
+function urlKey(url: URL): string {
+  return `url:${url.host ?? ''}|${url.path ?? ''}|${url.fragment ?? ''}`
+}
+
+function backlinkItem(row: Row): BacklinkItem {
+  return {
+    rowId: row.id,
+    text: displayText(row),
+    type: row.type,
+    level: row.level,
+    path: row.ancestors
+      .filter((ancestor) => ancestor.parent)
+      .map(displayText),
+  }
 }
 
 function displayText(row: Row): string {

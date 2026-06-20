@@ -1,6 +1,6 @@
 import { AppExtensionContext, Disposable, OutlineEditor, Row, Window } from 'bike/app'
 import { BacklinksProtocol } from '../dom/protocols'
-import { findBacklinks } from './backlinks'
+import { BacklinkIndex } from './backlinks'
 
 export async function activate(_context: AppExtensionContext) {
   bike.observeWindows(async (window: Window) => {
@@ -11,6 +11,7 @@ export async function activate(_context: AppExtensionContext) {
 
     let editor: OutlineEditor | undefined
     let selectedRow: Row | undefined
+    let backlinkIndex: BacklinkIndex | undefined
     let selectionObserver: Disposable | undefined
     let outlineObserver: Disposable | undefined
 
@@ -56,7 +57,7 @@ export async function activate(_context: AppExtensionContext) {
           text: row.text.string.trim() || 'Untitled row',
           persistentId: row.persistentId,
         },
-        backlinks: findBacklinks(editor.outline, row),
+        backlinks: backlinkIndex?.getBacklinks(row) ?? [],
       })
     }
 
@@ -65,6 +66,7 @@ export async function activate(_context: AppExtensionContext) {
       outlineObserver?.dispose()
       editor = nextEditor
       selectedRow = nextEditor?.selection?.row
+      backlinkIndex = nextEditor ? new BacklinkIndex(nextEditor.outline) : undefined
 
       if (!nextEditor) {
         refresh()
@@ -76,7 +78,12 @@ export async function activate(_context: AppExtensionContext) {
         refresh()
       }, 200)
 
-      outlineObserver = nextEditor.outline.observeChanges(() => {
+      outlineObserver = nextEditor.outline.observeChanges((change) => {
+        if (change.type === 'reload') {
+          backlinkIndex = new BacklinkIndex(change.newOutline)
+        } else if (backlinkIndex && !backlinkIndex.applyChange(change)) {
+          return
+        }
         refresh()
       })
 
