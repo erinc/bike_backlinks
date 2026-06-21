@@ -93,4 +93,24 @@ describe('Backlinks', () => {
 
     assert.equal(index.getBacklinks(target).length, 0)
   })
+
+  it('records the nearest calendar day id from backlink source ancestors', () => {
+    const outline = new Outline()
+    outline.root.ensuredPersistentId
+    const [target] = outline.insertRows([
+      { persistentId: 'target', text: 'Target' },
+    ])
+    const [year] = outline.insertRows([{ persistentId: '2026/00/00', text: '2026' }])
+    const [month] = outline.insertRows([{ persistentId: '2026/06/00', text: 'June 2026' }], year)
+    const [day] = outline.insertRows([{ persistentId: '2026/06/18', text: 'June 18, 2026' }], month)
+    const [source] = outline.insertRows([
+      { text: 'See [Target](#target)', format: 'markdown' },
+    ], day)
+
+    const backlinks = new BacklinkIndex(outline).getBacklinks(target)
+
+    assert.equal(backlinks.length, 1)
+    assert.equal(backlinks[0].rowId, source.id)
+    assert.equal(backlinks[0].calendarDate, '2026/06/18')
+  })
 })

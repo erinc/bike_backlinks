@@ -4,8 +4,9 @@ Backlinks inspector extension for [Bike Outliner 2](https://www.hogbaysoftware.c
 
 The extension adds a **Backlinks** section to Bike's inspector and lists rows in
 the current outline that link to the selected row. Click a backlink to reveal
-and select its source row. Backlinks are sorted newest to oldest by modified
-date, falling back to created date when needed.
+and select its source row. Backlinks under Calendar-style rows
+(`YYYY/MM/DD`) are sorted newest to oldest by that calendar date, then by
+modified date and created date when needed.
 
 ## Development
 

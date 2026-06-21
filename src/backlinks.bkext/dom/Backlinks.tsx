@@ -150,12 +150,30 @@ function sortBacklinks(backlinks: BacklinkItem[], rowDates: Record<string, RowDa
   const outlineOrder = new Map(backlinks.map((backlink, index) => [backlink.rowId, index]))
 
   return [...backlinks].sort((left, right) => {
+    const leftCalendarTime = calendarSortTime(left.calendarDate)
+    const rightCalendarTime = calendarSortTime(right.calendarDate)
+    if (leftCalendarTime !== rightCalendarTime) return rightCalendarTime - leftCalendarTime
+
     const leftTime = sortTime(datesForBacklink(left, rowDates))
     const rightTime = sortTime(datesForBacklink(right, rowDates))
 
     if (leftTime !== rightTime) return rightTime - leftTime
     return (outlineOrder.get(left.rowId) ?? 0) - (outlineOrder.get(right.rowId) ?? 0)
   })
+}
+
+function calendarSortTime(calendarDate: string | undefined): number {
+  if (!calendarDate) return 0
+
+  const match = calendarDate.match(/^(\d{4})\/(\d{2})\/(\d{2})$/)
+  if (!match) return 0
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (!year || month < 1 || month > 12 || day < 1 || day > 31) return 0
+
+  return Date.UTC(year, month - 1, day)
 }
 
 function datesForBacklink(backlink: BacklinkItem, rowDates: Record<string, RowDates>): RowDates | undefined {

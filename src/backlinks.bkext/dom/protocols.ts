@@ -3,6 +3,7 @@ import { DOMProtocol } from 'bike/core'
 export type BacklinkItem = {
   rowId: number
   persistentId?: string
+  calendarDate?: string
   text: string
   type: string
   level: number

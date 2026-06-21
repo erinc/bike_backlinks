@@ -219,6 +219,7 @@ function backlinkItem(row: Row): BacklinkItem {
   return {
     rowId: row.id,
     persistentId: row.persistentId,
+    calendarDate: findCalendarDateId(row),
     text: displayText(row),
     type: row.type,
     level: row.level,
@@ -226,6 +227,23 @@ function backlinkItem(row: Row): BacklinkItem {
       .filter((ancestor) => ancestor.parent)
       .map(displayText),
   }
+}
+
+function findCalendarDateId(row: Row): string | undefined {
+  for (const ancestor of row.ancestorsWithSelf.slice().reverse()) {
+    const persistentId = ancestor.persistentId
+    if (persistentId && isCalendarDayId(persistentId)) return persistentId
+  }
+  return undefined
+}
+
+function isCalendarDayId(persistentId: string): boolean {
+  const match = persistentId.match(/^(\d{4})\/(\d{2})\/(\d{2})$/)
+  if (!match) return false
+
+  const month = Number(match[2])
+  const day = Number(match[3])
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31
 }
 
 function displayText(row: Row): string {
